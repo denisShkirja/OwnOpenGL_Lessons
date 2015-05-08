@@ -128,7 +128,7 @@ ObjModel::ObjModel(const char *p_filePath)
                 {
                     if (!stream.fail())
                     {
-                        v_indexes.push_back(v_index);
+                        v_indexes.push_back(--v_index);
                     }
                     break;
                 }
@@ -137,7 +137,7 @@ ObjModel::ObjModel(const char *p_filePath)
                     error = true;
                     break;
                 }
-                v_indexes.push_back(v_index);
+                v_indexes.push_back(--v_index);
 
                 if (stream.peek() == '/')
                 {
@@ -148,7 +148,7 @@ ObjModel::ObjModel(const char *p_filePath)
                         stream.ignore(1);
                         unsigned long vn_index;
                         stream >> vn_index;
-                        vn_indexes.push_back(vn_index);
+                        vn_indexes.push_back(--vn_index);
                         if (stream.fail())
                         {
                             error = true;
@@ -160,7 +160,7 @@ ObjModel::ObjModel(const char *p_filePath)
                         // v/vt
                         unsigned long vt_index;
                         stream >> vt_index;
-                        vt_indexes.push_back(vt_index);
+                        vt_indexes.push_back(--vt_index);
                         if (stream.fail())
                         {
                             error = true;
@@ -173,7 +173,7 @@ ObjModel::ObjModel(const char *p_filePath)
                             stream.ignore(1);
                             unsigned long vn_index;
                             stream >> vn_index;
-                            vn_indexes.push_back(vn_index);
+                            vn_indexes.push_back(--vn_index);
                             if (stream.fail())
                             {
                                 error = true;
@@ -195,9 +195,9 @@ ObjModel::ObjModel(const char *p_filePath)
             }
             else
             {
-                _FacesNormal.push_back(v_indexes);
-                _FacesVertex.push_back(vt_indexes);
-                _FacesTexture.push_back(vn_indexes);
+                _FacesVertex.push_back(v_indexes);
+                _FacesNormal.push_back(vn_indexes);
+                _FacesTexture.push_back(vt_indexes);
             }
         }
     }
