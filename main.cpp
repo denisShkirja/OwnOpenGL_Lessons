@@ -118,15 +118,17 @@ int main(int argc, char** argv)
 
         for (long i = 0; i < 3; i++)
         {
-            world_coords[i] = model->GetVertexGeometric(face_vertices[i]); ;
-            screen_coords[i] = Vector2l((world_coords[i].x + 1.) * width / 2., (world_coords[i].y + 1.) * width / 2.);
+            world_coords[i] = model->GetVertexGeometric(face_vertices[i]);
+            screen_coords[i] = Vector2l((world_coords[i].x + 1.) * width / 2.,
+                                        (world_coords[i].y + 1.) * width / 2.);
         }
         Vector3f norm = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]);
         norm.normalize();
         float intensity = norm * light;
         if (intensity > 0)
         {
-            triangle(image, screen_coords[0], screen_coords[1], screen_coords[2], TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
+            triangle(image, screen_coords[0], screen_coords[1], screen_coords[2],
+                     TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
         }
     }
     image.flip_vertically(); // i want to have the origin at the left bottom corner of the image

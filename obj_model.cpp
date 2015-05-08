@@ -70,7 +70,8 @@ ObjModel::ObjModel(const char *p_filePath)
         if (line[0] == 'v' && std::isspace(line[1]))
         {
             stream.ignore(2);
-            std::vector<float> values(std::istream_iterator<float>{stream}, std::istream_iterator<float>{});
+            std::vector<float> values(std::istream_iterator<float>{stream},
+                                      std::istream_iterator<float>{});
 
             if (values.size() != 3 || !stream.eof())
             {
@@ -85,7 +86,8 @@ ObjModel::ObjModel(const char *p_filePath)
         else if (line[0] == 'v' && line[1] == 't' && std::isspace(line[2]))
         {
             stream.ignore(3);
-            std::vector<float> values(std::istream_iterator<float>{stream}, std::istream_iterator<float>{});
+            std::vector<float> values(std::istream_iterator<float>{stream},
+                                      std::istream_iterator<float>{});
 
             if (values.size() != 3 || !stream.eof())
             {
@@ -98,7 +100,8 @@ ObjModel::ObjModel(const char *p_filePath)
         else if (line[0] == 'v' && line[1] == 'n' && std::isspace(line[2]))
         {
             stream.ignore(3);
-            std::vector<float> values(std::istream_iterator<float>{stream}, std::istream_iterator<float>{});
+            std::vector<float> values(std::istream_iterator<float>{stream},
+                                      std::istream_iterator<float>{});
 
             if (values.size() != 3 || !stream.eof())
             {
@@ -110,7 +113,92 @@ ObjModel::ObjModel(const char *p_filePath)
         }
         else if (line[0] == 'f' && std::isspace(line[1]))
         {
-            ;
+            stream.ignore(2);
+
+            std::vector<unsigned long> v_indexes;
+            std::vector<unsigned long> vn_indexes;
+            std::vector<unsigned long> vt_indexes;
+
+            bool error = false;
+            while (true)
+            {
+                unsigned long v_index;
+                stream >> v_index;
+                if (stream.eof())
+                {
+                    if (!stream.fail())
+                    {
+                        v_indexes.push_back(v_index);
+                    }
+                    break;
+                }
+                else if (stream.fail())
+                {
+                    error = true;
+                    break;
+                }
+                v_indexes.push_back(v_index);
+
+                if (stream.peek() == '/')
+                {
+                    stream.ignore(1);
+                    if (stream.peek() == '/')
+                    {
+                        // v//vn
+                        stream.ignore(1);
+                        unsigned long vn_index;
+                        stream >> vn_index;
+                        vn_indexes.push_back(vn_index);
+                        if (stream.fail())
+                        {
+                            error = true;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        // v/vt
+                        unsigned long vt_index;
+                        stream >> vt_index;
+                        vt_indexes.push_back(vt_index);
+                        if (stream.fail())
+                        {
+                            error = true;
+                            break;
+                        }
+
+                        if (stream.peek() == '/')
+                        {
+                            // v/vt/vn
+                            stream.ignore(1);
+                            unsigned long vn_index;
+                            stream >> vn_index;
+                            vn_indexes.push_back(vn_index);
+                            if (stream.fail())
+                            {
+                                error = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if ((vt_indexes.size() != 0 && vt_indexes.size() != v_indexes.size())
+                || (vn_indexes.size() != 0 && vn_indexes.size() != v_indexes.size())
+                || v_indexes.size() < 3)
+            {
+                error = true;
+            }
+            if (error)
+            {
+                std::cout << "Error: worng input on line " << line_number << std::endl;
+            }
+            else
+            {
+                _FacesNormal.push_back(v_indexes);
+                _FacesVertex.push_back(vt_indexes);
+                _FacesTexture.push_back(vn_indexes);
+            }
         }
     }
     if (!in_file.eof())
