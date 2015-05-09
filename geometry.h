@@ -56,3 +56,4 @@ public:
 
 typedef Vector3<float> Vector3f;
 typedef Vector3<long> Vector3l;
+

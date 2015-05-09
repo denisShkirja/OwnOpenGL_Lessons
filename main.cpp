@@ -1,5 +1,7 @@
 #include <cassert>
+#include <iostream>
 #include <memory>
+#include <limits>
 #include <cmath>
 #include <utility>
 
@@ -52,7 +54,8 @@ void line(TGAImage &image, int x0, int y0, int x1, int y1, TGAColor color)
     }
 }
 
-void triangle(TGAImage &image, Vector2l v0, Vector2l v1, Vector2l v2, TGAColor color)
+void triangle(TGAImage &image, Vector3l v0, Vector3l v1, Vector3l v2,
+              TGAColor color, std::vector<long> &zbuffer)
 {
     if (v0.y > v1.y)    std::swap(v0, v1);
     if (v0.y > v2.y)    std::swap(v0, v2);
@@ -64,20 +67,22 @@ void triangle(TGAImage &image, Vector2l v0, Vector2l v1, Vector2l v2, TGAColor c
     }
 
     float total_hight = v2.y - v0.y;
-    float low_sector_hight = v1.y - v0.y + 1;
-    float high_sector_hight = v2.y - v1.y + 1;
+    float low_sector_hight = v1.y - v0.y;
+    float high_sector_hight = v2.y - v1.y;
 
     for (long y = v0.y; y <= v2.y; y++)
     {
-        Vector2l left = v0 + (v2 - v0) * ((y - v0.y) / total_hight);
-        Vector2l right;
+        Vector3l left = v0 + (v2 - v0) * ((y - v0.y) / total_hight);
+        Vector3l right;
         if (y <= v1.y)
         {
-            right = v0 + (v1 - v0) * ((y - v0.y) / low_sector_hight);
+            float ratio = (low_sector_hight == 0) ? 1 : (y - v0.y) / low_sector_hight;
+            right = v0 + (v1 - v0) * ratio;
         }
         else
         {
-            right = v1 + (v2 - v1) * ((y - v1.y) / high_sector_hight);
+            float ratio = (high_sector_hight == 0) ? 1 : (y - v1.y) / high_sector_hight;
+            right = v1 + (v2 - v1) * ratio;
         }
 
         if (left.x > right.x)
@@ -86,16 +91,23 @@ void triangle(TGAImage &image, Vector2l v0, Vector2l v1, Vector2l v2, TGAColor c
         }
         for (long x = left.x; x <= right.x; x++)
         {
-            image.set(x, y, color);
+            float ratio = (right.x == left.x) ? 1 : ((float)(x - left.x) / (right.x - left.x));
+            Vector3l curr = left + (right - left) * ratio;
+
+            unsigned long width = image.get_width();
+            unsigned long offset = x + width * y;
+            if (zbuffer[offset] < curr.z)
+            {
+                zbuffer[offset] = curr.z;
+                image.set(x, y, color);
+            }
         }
     }
 }
 
 int main(int argc, char** argv)
 {
-    int width = 800;
-    int height = 800;
-    TGAImage image(width, height, TGAImage::RGB);
+    TGAImage image(800, 800, TGAImage::RGB);
 
     std::shared_ptr<ObjModel> model;
     if (argc == 2)
@@ -108,19 +120,27 @@ int main(int argc, char** argv)
     }
 
     Vector3f light = {0, 0, -1};
-    for(std::size_t i = 0; i < model->GetFacesCount(); i++)
+    std::vector<long> zbuffer;
+    for (int i = 0; i < image.get_width() * image.get_height(); i++)
+    {
+        zbuffer.push_back(std::numeric_limits<int>::min());
+    }
+
+    for (std::size_t i = 0; i < model->GetFacesCount(); i++)
     {
         std::vector<unsigned long> face_vertices = model->GetFaceVertices(i);
         assert(face_vertices.size() == 3);
 
         Vector3f world_coords[3];
-        Vector2l screen_coords[3];
+        Vector3l screen_coords[3];
 
         for (long i = 0; i < 3; i++)
         {
+            const unsigned long depth = 255;
             world_coords[i] = model->GetVertexGeometric(face_vertices[i]);
-            screen_coords[i] = Vector2l((world_coords[i].x + 1.) * width / 2.,
-                                        (world_coords[i].y + 1.) * width / 2.);
+            screen_coords[i] = Vector3l(std::round((world_coords[i].x + 1.) * image.get_width() / 2.),
+                                        std::round((world_coords[i].y + 1.) * image.get_height() / 2.),
+                                        std::round((world_coords[i].z + 1.) * depth / 2.));
         }
         Vector3f norm = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]);
         norm.normalize();
@@ -128,7 +148,8 @@ int main(int argc, char** argv)
         if (intensity > 0)
         {
             triangle(image, screen_coords[0], screen_coords[1], screen_coords[2],
-                     TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
+                     TGAColor(intensity * 255, intensity * 255, intensity * 255, 255),
+                     zbuffer);
         }
     }
     image.flip_vertically(); // i want to have the origin at the left bottom corner of the image
