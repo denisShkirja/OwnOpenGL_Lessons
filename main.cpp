@@ -54,22 +54,25 @@ void line(TGAImage &image, int x0, int y0, int x1, int y1, TGAColor color)
     }
 }
 
-void triangle(TGAImage &image, std::array<Vector3l, 3> &v, std::array<Vector2l, 3> &u,
-              std::vector<long> &zbuffer, ObjModel &model, float intensity)
+void triangle(TGAImage &image, std::array<Vector3l, 3> &v, std::array<Vector3f, 3> &n,
+              std::array<Vector2l, 3> &u, std::vector<long> &zbuffer, ObjModel &model, Vector3f &light)
 {
     if (v[0].y > v[1].y)
     {
         std::swap(v[0], v[1]);
+        std::swap(n[0], n[1]);
         std::swap(u[0], u[1]);
     }
     if (v[0].y > v[2].y)
     {
         std::swap(v[0], v[2]);
+        std::swap(n[0], n[2]);
         std::swap(u[0], u[2]);
     }
     if (v[1].y > v[2].y)
     {
         std::swap(v[1], v[2]);
+        std::swap(n[1], n[2]);
         std::swap(u[1], u[2]);
     }
 
@@ -85,26 +88,32 @@ void triangle(TGAImage &image, std::array<Vector3l, 3> &v, std::array<Vector2l, 
     for (long y = v[0].y; y <= v[2].y; y++)
     {
         Vector2l left_u = u[0] + (u[2] - u[0]) * ((y - v[0].y) / total_hight);
-        Vector2l right_u;
         Vector3l left_v = v[0] + (v[2] - v[0]) * ((y - v[0].y) / total_hight);
+        Vector3f left_n = n[0] + (n[2] - n[0]) * ((y - v[0].y) / total_hight);
+        Vector2l right_u;
         Vector3l right_v;
+        Vector3f right_n;
+
         if (y <= v[1].y)
         {
             float ratio = (low_sector_hight == 0) ? 1 : (y - v[0].y) / low_sector_hight;
             right_v = v[0] + (v[1] - v[0]) * ratio;
             right_u = u[0] + (u[1] - u[0]) * ratio;
+            right_n = n[0] + (n[1] - n[0]) * ratio;
         }
         else
         {
             float ratio = (high_sector_hight == 0) ? 1 : (y - v[1].y) / high_sector_hight;
             right_v = v[1] + (v[2] - v[1]) * ratio;
             right_u = u[1] + (u[2] - u[1]) * ratio;
+            right_n = n[1] + (n[2] - n[1]) * ratio;
         }
 
         if (left_v.x > right_v.x)
         {
             std::swap(left_v, right_v);
             std::swap(left_u, right_u);
+            std::swap(left_n, right_n);
         }
         for (long x = left_v.x; x <= right_v.x; x++)
         {
@@ -115,12 +124,18 @@ void triangle(TGAImage &image, std::array<Vector3l, 3> &v, std::array<Vector2l, 
             unsigned long offset = x + width * y;
             if (zbuffer[offset] < z)
             {
-                Vector2l curr_u = left_u + (right_u - left_u) * ratio;
-                TGAColor color = model.GetColor(curr_u.x, curr_u.y);
-                color = TGAColor(color.r * intensity, color.g * intensity, color.b * intensity, color.a);
+                Vector3f curr_n = left_n + (right_n - left_n) * ratio;
+                curr_n.normalize();
+                float intensity = curr_n * light;
+                if (intensity > 0)
+                {
+                    Vector2l curr_u = left_u + (right_u - left_u) * ratio;
+                    TGAColor color = model.GetColor(curr_u.x, curr_u.y);
+                    color = TGAColor(color.r * intensity, color.g * intensity, color.b * intensity, color.a);
 
-                zbuffer[offset] = z;
-                image.set(x, y, color);
+                    zbuffer[offset] = z;
+                    image.set(x, y, color);
+                }
             }
         }
     }
@@ -150,7 +165,7 @@ int main(int argc, char** argv)
         }
     }
 
-    Vector3f light = {0, 0, -1};
+    Vector3f light = {0, 0, 1};
     std::vector<long> zbuffer;
     for (int i = 0; i < image.get_width() * image.get_height(); i++)
     {
@@ -161,10 +176,13 @@ int main(int argc, char** argv)
     {
         std::vector<unsigned long> face_vertices = model->GetFaceVertices(i);
         std::vector<unsigned long> face_textures = model->GetFaceTextures(i);
+        std::vector<unsigned long> face_normals = model->GetFaceNormals(i);
         assert(face_vertices.size() == 3);
-        assert(face_textures.size() == 3);
+        assert(face_vertices.size() == 3);
+        assert(face_normals.size() == 3);
 
         std::array<Vector3f, 3> world_coords;
+        std::array<Vector3f, 3> normal_coords;
         std::array<Vector3l, 3> screen_coords;
         std::array<Vector2l, 3> texture_coords;
 
@@ -172,19 +190,14 @@ int main(int argc, char** argv)
         {
             const unsigned long depth = 255;
             texture_coords[i] = model->GetVertexTexture(face_textures[i]);
+            normal_coords[i] = model->GetVertexNormal(face_normals[i]);
             world_coords[i] = model->GetVertexGeometric(face_vertices[i]);
             screen_coords[i] = Vector3l(std::round((world_coords[i].x + 1.) * image.get_width() / 2.),
                                         std::round((world_coords[i].y + 1.) * image.get_height() / 2.),
                                         std::round((world_coords[i].z + 1.) * depth / 2.));
         }
-        Vector3f norm = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]);
-        norm.normalize();
-        float intensity = norm * light;
-        if (intensity > 0)
-        {
-            triangle(image, screen_coords, texture_coords,
-                     zbuffer, *model, intensity);
-        }
+        triangle(image, screen_coords, normal_coords, texture_coords,
+                    zbuffer, *model, light);
     }
     image.flip_vertically(); // i want to have the origin at the left bottom corner of the image
     image.write_tga_file("output.tga");
