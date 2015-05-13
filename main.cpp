@@ -54,51 +54,72 @@ void line(TGAImage &image, int x0, int y0, int x1, int y1, TGAColor color)
     }
 }
 
-void triangle(TGAImage &image, Vector3l v0, Vector3l v1, Vector3l v2,
-              TGAColor color, std::vector<long> &zbuffer)
+void triangle(TGAImage &image, std::array<Vector3l, 3> &v, std::array<Vector2l, 3> &u,
+              std::vector<long> &zbuffer, ObjModel &model, float intensity)
 {
-    if (v0.y > v1.y)    std::swap(v0, v1);
-    if (v0.y > v2.y)    std::swap(v0, v2);
-    if (v1.y > v2.y)    std::swap(v1, v2);
+    if (v[0].y > v[1].y)
+    {
+        std::swap(v[0], v[1]);
+        std::swap(u[0], u[1]);
+    }
+    if (v[0].y > v[2].y)
+    {
+        std::swap(v[0], v[2]);
+        std::swap(u[0], u[2]);
+    }
+    if (v[1].y > v[2].y)
+    {
+        std::swap(v[1], v[2]);
+        std::swap(u[1], u[2]);
+    }
 
-    if (v0.y == v2.y)
+    if (v[0].y == v[2].y)
     {
         return;
     }
 
-    float total_hight = v2.y - v0.y;
-    float low_sector_hight = v1.y - v0.y;
-    float high_sector_hight = v2.y - v1.y;
+    float total_hight = v[2].y - v[0].y;
+    float low_sector_hight = v[1].y - v[0].y;
+    float high_sector_hight = v[2].y - v[1].y;
 
-    for (long y = v0.y; y <= v2.y; y++)
+    for (long y = v[0].y; y <= v[2].y; y++)
     {
-        Vector3l left = v0 + (v2 - v0) * ((y - v0.y) / total_hight);
-        Vector3l right;
-        if (y <= v1.y)
+        Vector2l left_u = u[0] + (u[2] - u[0]) * ((y - v[0].y) / total_hight);
+        Vector2l right_u;
+        Vector3l left_v = v[0] + (v[2] - v[0]) * ((y - v[0].y) / total_hight);
+        Vector3l right_v;
+        if (y <= v[1].y)
         {
-            float ratio = (low_sector_hight == 0) ? 1 : (y - v0.y) / low_sector_hight;
-            right = v0 + (v1 - v0) * ratio;
+            float ratio = (low_sector_hight == 0) ? 1 : (y - v[0].y) / low_sector_hight;
+            right_v = v[0] + (v[1] - v[0]) * ratio;
+            right_u = u[0] + (u[1] - u[0]) * ratio;
         }
         else
         {
-            float ratio = (high_sector_hight == 0) ? 1 : (y - v1.y) / high_sector_hight;
-            right = v1 + (v2 - v1) * ratio;
+            float ratio = (high_sector_hight == 0) ? 1 : (y - v[1].y) / high_sector_hight;
+            right_v = v[1] + (v[2] - v[1]) * ratio;
+            right_u = u[1] + (u[2] - u[1]) * ratio;
         }
 
-        if (left.x > right.x)
+        if (left_v.x > right_v.x)
         {
-            std::swap(left, right);
+            std::swap(left_v, right_v);
+            std::swap(left_u, right_u);
         }
-        for (long x = left.x; x <= right.x; x++)
+        for (long x = left_v.x; x <= right_v.x; x++)
         {
-            float ratio = (right.x == left.x) ? 1 : ((float)(x - left.x) / (right.x - left.x));
-            Vector3l curr = left + (right - left) * ratio;
+            float ratio = (right_v.x == left_v.x) ? 1 : ((float)(x - left_v.x) / (right_v.x - left_v.x));
+            long z = left_v.z + (right_v.z - left_v.z) * ratio;
 
             unsigned long width = image.get_width();
             unsigned long offset = x + width * y;
-            if (zbuffer[offset] < curr.z)
+            if (zbuffer[offset] < z)
             {
-                zbuffer[offset] = curr.z;
+                Vector2l curr_u = left_u + (right_u - left_u) * ratio;
+                TGAColor color = model.GetColor(curr_u.x, curr_u.y);
+                color = TGAColor(color.r * intensity, color.g * intensity, color.b * intensity, color.a);
+
+                zbuffer[offset] = z;
                 image.set(x, y, color);
             }
         }
@@ -110,13 +131,23 @@ int main(int argc, char** argv)
     TGAImage image(800, 800, TGAImage::RGB);
 
     std::shared_ptr<ObjModel> model;
-    if (argc == 2)
+    if (argc == 3)
     {
         model = std::make_shared<ObjModel>(argv[1]);
+        if (!model->LoadDiffuseTexture(argv[2]))
+        {
+            std::cerr << std::endl << "Error: Can't load " << argv[2] << ".";
+            return 0;
+        }
     }
     else
     {
         model = std::make_shared<ObjModel>("./african_head.obj");
+        if (!model->LoadDiffuseTexture("./african_head_diffuse.tga"))
+        {
+            std::cerr << std::endl << "Error: Can't load african_head_diffuse.tga.";
+            return 0;
+        }
     }
 
     Vector3f light = {0, 0, -1};
@@ -129,14 +160,18 @@ int main(int argc, char** argv)
     for (std::size_t i = 0; i < model->GetFacesCount(); i++)
     {
         std::vector<unsigned long> face_vertices = model->GetFaceVertices(i);
+        std::vector<unsigned long> face_textures = model->GetFaceTextures(i);
         assert(face_vertices.size() == 3);
+        assert(face_textures.size() == 3);
 
-        Vector3f world_coords[3];
-        Vector3l screen_coords[3];
+        std::array<Vector3f, 3> world_coords;
+        std::array<Vector3l, 3> screen_coords;
+        std::array<Vector2l, 3> texture_coords;
 
         for (long i = 0; i < 3; i++)
         {
             const unsigned long depth = 255;
+            texture_coords[i] = model->GetVertexTexture(face_textures[i]);
             world_coords[i] = model->GetVertexGeometric(face_vertices[i]);
             screen_coords[i] = Vector3l(std::round((world_coords[i].x + 1.) * image.get_width() / 2.),
                                         std::round((world_coords[i].y + 1.) * image.get_height() / 2.),
@@ -147,9 +182,8 @@ int main(int argc, char** argv)
         float intensity = norm * light;
         if (intensity > 0)
         {
-            triangle(image, screen_coords[0], screen_coords[1], screen_coords[2],
-                     TGAColor(intensity * 255, intensity * 255, intensity * 255, 255),
-                     zbuffer);
+            triangle(image, screen_coords, texture_coords,
+                     zbuffer, *model, intensity);
         }
     }
     image.flip_vertically(); // i want to have the origin at the left bottom corner of the image

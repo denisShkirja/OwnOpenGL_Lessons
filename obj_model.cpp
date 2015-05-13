@@ -40,6 +40,27 @@ void concatinate_syserrmsg(std::string &errMsg)
     errMsg += sys_err_msg;
 }
 
+bool ObjModel::LoadDiffuseTexture(const char *p_filePath)
+{
+    if (!_DiffuseTexture.read_tga_file(p_filePath))
+    {
+        return false;
+    }
+    _DiffuseTexture.flip_vertically();
+    return true;
+}
+
+TGAColor ObjModel::GetColor(unsigned long x, unsigned long y)
+{
+    return _DiffuseTexture.get(x, y);
+}
+
+Vector2l ObjModel::GetVertexTexture(unsigned long i)
+{
+    return Vector2l(std::round(_VerticesTexture[i].x * _DiffuseTexture.get_width()),
+                    std::round(_VerticesTexture[i].y * _DiffuseTexture.get_height()));
+}
+
 ObjModel::ObjModel(const char *p_filePath)
 {
     std::fstream in_file(p_filePath, std::ios_base::in);
@@ -95,6 +116,8 @@ ObjModel::ObjModel(const char *p_filePath)
             }
             else
             {
+                Vector2f v(values[0], values[1]);
+                _VerticesTexture.push_back(v);
             }
         }
         else if (line[0] == 'v' && line[1] == 'n' && std::isspace(line[2]))
@@ -109,6 +132,8 @@ ObjModel::ObjModel(const char *p_filePath)
             }
             else
             {
+                Vector3f v(values[0], values[1], values[2]);
+                _VerticesNormals.push_back(v);
             }
         }
         else if (line[0] == 'f' && std::isspace(line[1]))
